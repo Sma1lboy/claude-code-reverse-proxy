@@ -5,6 +5,7 @@ const path = require('path');
 const ClaudeRequest = require('./ClaudeRequest');
 const Logger = require('./Logger');
 const OAuthManager = require('./OAuthManager');
+const { handleChatCompletions, handleModels } = require('./OpenAICompat');
 const { exec } = require('child_process');
 
 let config = {};
@@ -49,6 +50,24 @@ function loadConfig() {
   }
 }
 
+
+function checkProxyAuth(req) {
+  const proxyKey = config.proxy_api_key;
+  if (!proxyKey) return true; // no key configured = open
+
+  // x-api-key header
+  let key = req.headers['x-api-key'];
+  // Authorization: Bearer <key>
+  if (!key) {
+    const auth = req.headers['authorization'] || '';
+    if (auth.startsWith('Bearer ')) key = auth.slice(7);
+  }
+  const ok = key === proxyKey;
+  if (!ok) {
+    Logger.info(`[auth] REJECTED — got key="${key}" (${typeof key}), expected="${proxyKey}" (${typeof proxyKey})`);
+  }
+  return ok;
+}
 
 function parseBody(req) {
   return new Promise((resolve, reject) => {
@@ -255,7 +274,35 @@ async function handleRequest(req, res) {
     res.end(JSON.stringify({ status: 'ok', server: 'claude-code-proxy', timestamp: Date.now() }));
     return;
   }
-  
+
+  // ── Proxy API key auth (skip for /auth/*, /health, OPTIONS) ──
+  if (!pathname.startsWith('/auth/') && pathname !== '/health') {
+    if (!checkProxyAuth(req)) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { type: 'authentication_error', message: 'Invalid or missing API key' } }));
+      return;
+    }
+  }
+
+  // ── OpenAI-compatible endpoints ──
+  if (req.method === 'POST' && pathname === '/v1/chat/completions') {
+    try {
+      const body = await parseBody(req);
+      Logger.debug('OpenAI chat/completions request:', JSON.stringify(body, null, 2));
+      await handleChatCompletions(req, res, body);
+    } catch (error) {
+      Logger.error('OpenAI compat error:', error.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: error.message, type: 'server_error' } }));
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && pathname === '/v1/models') {
+    handleModels(req, res);
+    return;
+  }
+
   if (req.method === 'POST' && (pathname === '/v1/messages' || pathname.match(/^\/v1\/\w+\/messages$/))) {
     try {
       Logger.debug('Incoming request headers:', JSON.stringify(req.headers, null, 2));
