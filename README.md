@@ -34,9 +34,16 @@ If you already have Claude Code installed and prefer to use its credentials:
 2. Visit `http://localhost:42069/auth/login` to authenticate
 
 **Important Notes:**
-- NOT an OpenAI compatible proxy, uses Anthropic's schema
+- Supports both **Anthropic** (`/v1/messages`) and **OpenAI** (`/v1/chat/completions`) schemas
 - Only exact dated model names of Sonnet 4, 3.7, 3.6, and Haiku 3.5 are allowed. Opus 4 too with Max.
 - Understand your front end's caching, some FEs like ST disable by default, complex RP setups may consistently miss cache and increase costs
+
+### Configuration
+
+```bash
+cp server/config.example.txt server/config.txt
+# Edit server/config.txt with your settings
+```
 
 ## Authentication
 
@@ -142,6 +149,52 @@ Most likely thing to go wrong is not being able to find the credentials, either 
 - If all else fails, go to wsl, `cat ~/.claude/.credentials.json`, copy out the access token (after sending a message from Claude Code first to make sure it's not expired), and put it in the authentication header. In ST, this is the Proxy "password".
   - If that's one too steps, you can go to util folder, enter wsl in the address bar, and run `claude-bearer.js` - that'll make sure it's not expired, and you'll get the token delivered to you. You don't have to copy "Bearer"
 - If you tend to leave Claude Code open for hours, you may find yourself logged out. This means the access token expired and this proxy renewed it, but Claude Code just sits there upset that it's expired instead of just checking the file. Just close Claude Code, it'll be fine when you open it again.
+
+## OpenAI-Compatible API
+
+This proxy exposes an OpenAI-compatible `/v1/chat/completions` endpoint, so any application that speaks OpenAI format can use Claude through your CC subscription.
+
+### Endpoints
+
+| Endpoint | Format | Description |
+|---|---|---|
+| `POST /v1/messages` | Anthropic | Native Claude API (SillyTavern, etc.) |
+| `POST /v1/chat/completions` | OpenAI | OpenAI-compatible (any OpenAI SDK client) |
+| `GET /v1/models` | OpenAI | List available models |
+
+### Usage
+
+```bash
+# OpenAI-format request
+curl -X POST http://localhost:42069/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_PROXY_API_KEY" \
+  -d '{
+    "model": "claude-sonnet-4-20250514",
+    "messages": [{"role": "user", "content": "Hello"}],
+    "max_tokens": 1000
+  }'
+```
+
+Works with any OpenAI SDK:
+```python
+from openai import OpenAI
+client = OpenAI(base_url="http://localhost:42069/v1", api_key="YOUR_PROXY_API_KEY")
+response = client.chat.completions.create(
+    model="claude-sonnet-4-20250514",
+    messages=[{"role": "user", "content": "Hello"}]
+)
+```
+
+### Proxy API Key
+
+Set `proxy_api_key` in `server/config.txt` to protect the proxy. Clients must send the key via `x-api-key` header or `Authorization: Bearer`. Leave blank to disable authentication.
+
+### Supported Features
+- Streaming (SSE) and non-streaming responses
+- System messages
+- Tool/function calling (full OpenAI ↔ Anthropic conversion)
+- Image inputs (base64)
 
 ## What This Does
 

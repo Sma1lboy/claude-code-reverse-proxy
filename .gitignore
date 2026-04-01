@@ -31,3 +31,6 @@ Thumbs.db
 
 # Reference repos
 _reference/
+
+# Config with secrets
+server/config.txt

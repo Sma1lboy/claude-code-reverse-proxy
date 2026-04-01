@@ -28,7 +28,10 @@ setInterval(cleanupExpiredPKCE, 60000);
 
 function loadConfig() {
   try {
-    const configPath = path.join(__dirname, 'config.txt');
+    let configPath = path.join(__dirname, 'config.txt');
+    if (!fs.existsSync(configPath)) {
+      configPath = path.join(__dirname, 'config.example.txt');
+    }
     const configFile = fs.readFileSync(configPath, 'utf8');
     
     configFile.split('\n').forEach(line => {
